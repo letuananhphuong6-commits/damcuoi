@@ -10,6 +10,7 @@ interface LogoRendererProps {
   bgColor?: string; // Optional custom background color override
   width?: string | number;
   height?: string | number;
+  domId?: string; // Optional custom DOM ID
 }
 
 export const LogoRenderer: React.FC<LogoRendererProps> = ({
@@ -22,10 +23,11 @@ export const LogoRenderer: React.FC<LogoRendererProps> = ({
   bgColor,
   width = "100%",
   height = "100%",
+  domId,
 }) => {
-  // Determine Category based on ID (1-25: Royal, 26-50: Minimalist, 51-75: Art Deco, 76-100: Botanical)
-  const categoryId = Math.ceil(id / 25);
-  const subId = ((id - 1) % 25) + 1; // 1 to 25
+  // Determine Category based on ID (1-50: Royal, 51-100: Minimalist, 101-150: Art Deco, 151-200: Botanical)
+  const categoryId = Math.ceil(id / 50);
+  const subId = ((id - 1) % 50) + 1; // 1 to 50
 
   // Default color palettes based on trends
   let defaultStrokeColor = "#D4AF37"; // Royal Gold
@@ -67,7 +69,7 @@ export const LogoRenderer: React.FC<LogoRendererProps> = ({
   // SVG dimensions: ViewBox is 400x400
   return (
     <svg
-      id={`wedding-logo-${id}`}
+      id={domId || `wedding-logo-${id}`}
       viewBox="0 0 400 400"
       width={width}
       height={height}
@@ -76,6 +78,9 @@ export const LogoRenderer: React.FC<LogoRendererProps> = ({
       xmlns="http://www.w3.org/2000/svg"
     >
       <defs>
+        <style type="text/css">
+          {`@import url('https://fonts.googleapis.com/css2?family=Alex+Brush&family=Cinzel:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Great+Vibes&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@200;300;400;500&family=Pinyon+Script&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400&family=Space+Grotesk:wght@300;400;500&display=swap');`}
+        </style>
         {/* Gradients */}
         <linearGradient id={`gold-foil-${id}`} x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#B38728" />

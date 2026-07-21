@@ -20,6 +20,7 @@ import {
   BookOpen
 } from "lucide-react";
 import { LogoRenderer } from "./components/LogoRenderer";
+import * as htmlToImage from "html-to-image";
 
 // Definitions of trends
 interface TrendDef {
@@ -114,14 +115,14 @@ export default function App() {
   const [chatInput, setChatInput] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
 
-  // Generate 100 logo IDs
-  const allLogoIds = Array.from({ length: 100 }, (_, i) => i + 1);
+  // Generate 200 logo IDs
+  const allLogoIds = Array.from({ length: 200 }, (_, i) => i + 1);
 
   // Search/Filter matching rules
   const getFilteredLogos = () => {
     return allLogoIds.filter((id) => {
       // Tab filter
-      const categoryId = Math.ceil(id / 25);
+      const categoryId = Math.ceil(id / 50);
       if (activeTab === "royal" && categoryId !== 1) return false;
       if (activeTab === "minimal" && categoryId !== 2) return false;
       if (activeTab === "deco" && categoryId !== 3) return false;
@@ -130,7 +131,7 @@ export default function App() {
       // Search query filter (sub-attributes based on indices)
       if (searchQuery.trim() !== "") {
         const query = searchQuery.toLowerCase();
-        const subId = ((id - 1) % 25) + 1;
+        const subId = ((id - 1) % 50) + 1;
         const borderType = subId % 6;
         const accentType = subId % 4;
 
@@ -184,8 +185,17 @@ export default function App() {
 
   // --- Export SVG ---
   const downloadSVG = (id: number) => {
-    const svgElement = document.getElementById(`wedding-logo-${id}`);
-    if (!svgElement) return;
+    // Try to get the offscreen export-specific element first
+    let svgElement = document.getElementById(`wedding-logo-export-${id}`);
+    if (!svgElement) {
+      // Fallback to gallery element if export-specific is not rendered
+      svgElement = document.getElementById(`wedding-logo-${id}`);
+    }
+
+    if (!svgElement) {
+      alert("Không tìm thấy mẫu logo để xuất SVG!");
+      return;
+    }
 
     // Grab SVG string
     const svgString = new XMLSerializer().serializeToString(svgElement);
@@ -201,44 +211,216 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  // --- Export 2K PNG (2048x2048) ---
-  const download2KPNG = (id: number) => {
-    const svgElement = document.getElementById(`wedding-logo-${id}`);
-    if (!svgElement) return;
+  // --- Export PNG with high quality and custom resolution using a lightweight isolated iframe method ---
+  const downloadPNGWithResolution = async (id: number, resolution: "2K" | "4K" | "8K") => {
+    let svgElement = document.getElementById(`wedding-logo-export-${id}`) as unknown as SVGElement | null;
+    if (!svgElement) {
+      // Fallback to gallery element if export-specific is not rendered
+      svgElement = document.getElementById(`wedding-logo-${id}`) as unknown as SVGElement | null;
+    }
 
-    const svgString = new XMLSerializer().serializeToString(svgElement);
-    const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(svgBlob);
+    if (!svgElement) {
+      alert("Không tìm thấy mẫu logo để xuất ảnh!");
+      return;
+    }
 
-    const img = new Image();
-    img.src = url;
-    img.onload = () => {
-      // Setup canvas for 2K
-      const canvas = document.createElement("canvas");
-      canvas.width = 2048;
-      canvas.height = 2048;
-      const ctx = canvas.getContext("2d");
+    let size = 2048;
+    if (resolution === "4K") size = 4096;
+    if (resolution === "8K") size = 8192;
 
-      if (ctx) {
-        // High quality scale smoothing
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = "high";
+    const baseSize = 400;
+    const ratio = size / baseSize;
 
-        // Draw image stretched to 2K bounding box
-        ctx.drawImage(img, 0, 0, 2048, 2048);
+    // Temporary disable and show loading text on active button
+    const activeBtn = document.activeElement as HTMLButtonElement | null;
+    const originalHtml = activeBtn ? activeBtn.innerHTML : "";
+    if (activeBtn) {
+      activeBtn.disabled = true;
+      activeBtn.innerHTML = `<span class="animate-pulse">Đang xử lý ${resolution}...</span>`;
+    }
 
-        // Convert to dataURL & trigger download
-        const pngUrl = canvas.toDataURL("image/png");
-        const link = document.createElement("a");
-        link.href = pngUrl;
-        link.download = `monogram_wedding_${partner1}_${partner2}_style_${id}_2K.png`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    const restoreButton = () => {
+      if (activeBtn) {
+        activeBtn.disabled = false;
+        activeBtn.innerHTML = originalHtml;
+      }
+    };
+
+    let iframe: HTMLIFrameElement | null = null;
+
+    try {
+      // Clone the SVG so we don't mutate the original on-screen representation
+      const svgClone = svgElement.cloneNode(true) as SVGElement;
+      svgClone.setAttribute("width", "400");
+      svgClone.setAttribute("height", "400");
+      // Ensure the SVG style is fully visible
+      svgClone.style.display = "block";
+      svgClone.style.visibility = "visible";
+
+      // Create a clean, isolated iframe to completely bypass Tailwind CSS v4 styling and prevent parser crashes
+      iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.width = "400px";
+      iframe.style.height = "400px";
+      iframe.style.left = "-9999px";
+      iframe.style.top = "-9999px";
+      iframe.style.visibility = "hidden";
+      iframe.style.pointerEvents = "none";
+      document.body.appendChild(iframe);
+
+      const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!iframeDoc) {
+        throw new Error("Cannot access iframe document context");
       }
 
-      URL.revokeObjectURL(url);
-    };
+      const googleFontsStyle = `@import url('https://fonts.googleapis.com/css2?family=Alex+Brush&family=Cinzel:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Great+Vibes&family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@200;300;400;500&family=Pinyon+Script&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400&family=Space+Grotesk:wght@300;400;500&display=swap');`;
+
+      iframeDoc.open();
+      iframeDoc.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <style type="text/css">
+            ${googleFontsStyle}
+            body, html {
+              margin: 0;
+              padding: 0;
+              background-color: ${backgroundColor || "transparent"};
+              width: 400px;
+              height: 400px;
+              overflow: hidden;
+            }
+            #render-container {
+              width: 400px;
+              height: 400px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              box-sizing: border-box;
+            }
+          </style>
+        </head>
+        <body>
+          <div id="render-container"></div>
+        </body>
+        </html>
+      `);
+      iframeDoc.close();
+
+      const renderContainer = iframeDoc.getElementById("render-container");
+      if (!renderContainer) {
+        throw new Error("Render container not found in iframe");
+      }
+      renderContainer.appendChild(svgClone);
+
+      // Wait for font loading in the isolated iframe context
+      if (iframe.contentWindow) {
+        await iframe.contentWindow.document.fonts.ready;
+      }
+      // Warm up the browser rendering engine for text rasterization
+      await new Promise((resolve) => setTimeout(resolve, 250));
+
+      // Use html-to-image inside the clean context - 100% crash-free because of no complex tailwind styles
+      const dataUrl = await htmlToImage.toPng(renderContainer, {
+        width: baseSize,
+        height: baseSize,
+        pixelRatio: ratio,
+        style: {
+          transform: "scale(1)",
+          transformOrigin: "top left",
+        },
+        backgroundColor: backgroundColor || "transparent",
+        cacheBust: true,
+      });
+
+      // Trigger automatic file download
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `monogram_wedding_${partner1}_${partner2}_style_${id}_${resolution}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      restoreButton();
+    } catch (error) {
+      console.warn("Isolated html-to-image failed, entering canvas fallback:", error);
+      
+      // FALLBACK METHOD: Pure local canvas rendering (100% offline-compatible)
+      try {
+        const clone = svgElement.cloneNode(true) as SVGElement;
+        clone.setAttribute("width", size.toString());
+        clone.setAttribute("height", size.toString());
+
+        // Strip CSS external @imports to prevent browser canvas security violations
+        const styleElements = clone.getElementsByTagName("style");
+        for (let i = 0; i < styleElements.length; i++) {
+          const styleEl = styleElements[i];
+          if (styleEl.textContent && styleEl.textContent.includes("@import")) {
+            styleEl.textContent = styleEl.textContent.replace(/@import url\([^)]+\);/g, "");
+          }
+        }
+
+        const svgString = new XMLSerializer().serializeToString(clone);
+        const svgBlob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+        const url = URL.createObjectURL(svgBlob);
+
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const canvas = document.createElement("canvas");
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext("2d");
+
+            if (ctx) {
+              ctx.imageSmoothingEnabled = true;
+              ctx.imageSmoothingQuality = "high";
+
+              if (backgroundColor && backgroundColor !== "transparent") {
+                ctx.fillStyle = backgroundColor;
+                ctx.fillRect(0, 0, size, size);
+              } else {
+                ctx.clearRect(0, 0, size, size);
+              }
+
+              ctx.drawImage(img, 0, 0, size, size);
+
+              const pngUrl = canvas.toDataURL("image/png");
+              const link = document.createElement("a");
+              link.href = pngUrl;
+              link.download = `monogram_wedding_${partner1}_${partner2}_style_${id}_${resolution}.png`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            }
+            restoreButton();
+          } catch (innerErr) {
+            console.error("Canvas drawing fallback failed:", innerErr);
+            alert("Lỗi xuất ảnh! Vui lòng tải file Vector SVG cực kỳ sắc nét để in ấn.");
+            restoreButton();
+          } finally {
+            URL.revokeObjectURL(url);
+          }
+        };
+
+        img.onerror = () => {
+          URL.revokeObjectURL(url);
+          alert("Lỗi tải ảnh SVG! Vui lòng tải file Vector SVG sắc nét.");
+          restoreButton();
+        };
+
+        img.src = url;
+      } catch (fallbackErr) {
+        console.error("Full export pipeline failed:", fallbackErr);
+        alert("Lỗi hệ thống xuất ảnh! Bạn có thể tải file Vector SVG chất lượng cao nhất.");
+        restoreButton();
+      }
+    } finally {
+      // Safely clean up the iframe to free memory
+      if (iframe && iframe.parentNode) {
+        iframe.parentNode.removeChild(iframe);
+      }
+    }
   };
 
   // --- Send Message to Gemini AI Consultant ---
@@ -252,7 +434,7 @@ export default function App() {
     setAiLoading(true);
 
     // Pick active trend category name
-    const activeCategoryNum = inspectedId ? Math.ceil(inspectedId / 25) : 1;
+    const activeCategoryNum = inspectedId ? Math.ceil(inspectedId / 50) : 1;
     const activeTrend = TRENDS[activeCategoryNum].name;
 
     try {
@@ -311,7 +493,7 @@ export default function App() {
   };
 
   // Get current inspected details
-  const currentCategoryNum = inspectedId ? Math.ceil(inspectedId / 25) : 1;
+  const currentCategoryNum = inspectedId ? Math.ceil(inspectedId / 50) : 1;
   const currentTrend = TRENDS[currentCategoryNum];
   const midjourneyPromptFilled = currentTrend
     ? currentTrend.midjourneyPrompt.replace("[INITIALS]", initials.toUpperCase())
@@ -336,7 +518,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-xl font-cinzel font-light tracking-[0.1em] text-[#e5e5e5]">
-              100 LOGO CƯỚI CAO CẤP <span className="text-[#c5a059] font-normal">2026</span>
+              200 LOGO CƯỚI CAO CẤP <span className="text-[#c5a059] font-normal">2026</span>
             </h1>
             <p className="text-[10px] font-sans text-[#c5a059] tracking-[0.2em] uppercase mt-0.5">
               Family Branding & Monogram Studio · Hậu & My Exclusive
@@ -513,7 +695,7 @@ export default function App() {
               <span>Tiêu chuẩn In ấn & Laser-Cut</span>
             </div>
             <p className="leading-relaxed">
-              Tất cả 100 logo bên dưới đều được thiết kế theo tỷ lệ 1:1 chuẩn quốc tế, cấu trúc phẳng tuyệt đối để tránh lỗi in vỡ hình, sẵn sàng đưa vào khắc dấu sáp, dập nổi hoặc làm khuôn kim loại thiệp cưới vellum.
+              Tất cả 200 logo bên dưới đều được thiết kế theo tỷ lệ 1:1 chuẩn quốc tế, cấu trúc phẳng tuyệt đối để tránh lỗi in vỡ hình, sẵn sàng đưa vào khắc dấu sáp, dập nổi hoặc làm khuôn kim loại thiệp cưới vellum.
             </p>
           </div>
         </section>
@@ -527,7 +709,7 @@ export default function App() {
             {/* Category tabs */}
             <div className="flex flex-wrap items-center gap-1.5 w-full md:w-auto">
               {[
-                { id: "all", label: "Tất cả (100)" },
+                { id: "all", label: "Tất cả (200)" },
                 { id: "royal", label: "Cổ Điển Hoàng Gia" },
                 { id: "minimal", label: "Tối Giản Đương Đại" },
                 { id: "deco", label: "Art Deco Quý Phái" },
@@ -568,12 +750,12 @@ export default function App() {
             </div>
           </div>
 
-          {/* GALLERY GRID (The 100 Logos) */}
+          {/* GALLERY GRID (The 200 Logos) */}
           <div className="bg-[#0d0d0d] rounded-3xl p-5 border border-[#332a1f] min-h-[500px]">
             {filteredLogos.length > 0 ? (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4" id="logo-grid-container">
                 {filteredLogos.map((id) => {
-                  const catId = Math.ceil(id / 25);
+                  const catId = Math.ceil(id / 50);
                   let catBadgeColor = "bg-[#332a1f] text-[#c5a059] border-[#c5a059]/30";
                   let styleLabel = "Royal";
                   if (catId === 2) {
@@ -664,7 +846,7 @@ export default function App() {
                   <span>1. Khắc dấu sáp & Thêu thủ công</span>
                 </h4>
                 <p className="leading-relaxed pl-3 text-[#888]">
-                  Đối với con dấu sáp (wax seal), bạn nên chọn các logo có mã ID thuộc nhóm <strong>Classic Royal (1-25)</strong> hoặc <strong>Botanical Garden (76-100)</strong> vì các nét vẽ uốn lượn lồng ghép sẽ tạo độ bám sáp cực kỳ sâu, sáp nóng chảy dễ điền đầy khuôn mang lại tỷ lệ nét chữ vô cùng hoàn mỹ.
+                  Đối với con dấu sáp (wax seal), bạn nên chọn các logo có mã ID thuộc nhóm <strong>Classic Royal (1-50)</strong> hoặc <strong>Botanical Garden (151-200)</strong> vì các nét vẽ uốn lượn lồng ghép sẽ tạo độ bám sáp cực kỳ sâu, sáp nóng chảy dễ điền đầy khuôn mang lại tỷ lệ nét chữ vô cùng hoàn mỹ.
                 </p>
               </div>
 
@@ -792,7 +974,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-xs text-center md:text-left">
           <div className="space-y-1">
             <p className="font-cinzel text-[#c5a059] font-light tracking-[0.2em] text-sm">HẬU & MY 2026</p>
-            <p className="font-sans text-[#555]">Tuyển tập 100 tác phẩm monogram đám cưới đẳng cấp hoàng gia & tinh tế phẳng.</p>
+            <p className="font-sans text-[#555]">Tuyển tập 200 tác phẩm monogram đám cưới đẳng cấp hoàng gia & tinh tế phẳng.</p>
           </div>
           <div className="text-[#555] font-sans">
             <p>© 2026 Wedding Family Branding. Thiết kế độc bản cho ngày hạnh phúc nhất đời.</p>
@@ -1060,21 +1242,41 @@ export default function App() {
               </div>
 
               {/* Action Buttons */}
-              <div className="mt-6 grid grid-cols-2 gap-3">
+              <div className="mt-6 space-y-3">
                 <button
                   onClick={() => downloadSVG(inspectedId)}
-                  className="bg-[#111] hover:bg-[#1a1a1a] text-[#c5a059] border border-[#332a1f] py-3 px-4 rounded-xl text-xs font-semibold tracking-wide flex items-center justify-center space-x-1.5 transition-all shadow-md active:scale-95 font-sans"
+                  className="w-full bg-[#111] hover:bg-[#1a1a1a] text-[#c5a059] border border-[#332a1f] py-3 px-4 rounded-xl text-xs font-semibold tracking-wide flex items-center justify-center space-x-1.5 transition-all shadow-md active:scale-95 font-sans"
                 >
                   <Download className="w-4 h-4" />
-                  <span>Tải File Vector SVG</span>
+                  <span>Tải File Vector SVG (Sắc nét vô cực)</span>
                 </button>
-                <button
-                  onClick={() => download2KPNG(inspectedId)}
-                  className="bg-[#c5a059] hover:bg-[#b48d4c] text-black py-3 px-4 rounded-xl text-xs font-bold tracking-wide flex items-center justify-center space-x-1.5 transition-all shadow-md active:scale-95 font-sans"
-                >
-                  <Download className="w-4 h-4" />
-                  <span>Tải File Ảnh 2K PNG</span>
-                </button>
+                
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => downloadPNGWithResolution(inspectedId, "2K")}
+                    className="bg-[#c5a059] hover:bg-[#b48d4c] text-black py-2.5 px-2 rounded-xl text-[10px] font-bold tracking-wide flex flex-col items-center justify-center space-y-1 transition-all shadow-md active:scale-95 font-sans"
+                    title="Tải ảnh PNG độ phân giải 2K"
+                  >
+                    <Download className="w-3.5 h-3.5 text-black" />
+                    <span>In ấn 2K</span>
+                  </button>
+                  <button
+                    onClick={() => downloadPNGWithResolution(inspectedId, "4K")}
+                    className="bg-[#c5a059] hover:bg-[#b48d4c] text-black py-2.5 px-2 rounded-xl text-[10px] font-bold tracking-wide flex flex-col items-center justify-center space-y-1 transition-all shadow-md active:scale-95 font-sans"
+                    title="Tải ảnh PNG độ phân giải 4K (Ultra-HD)"
+                  >
+                    <Download className="w-3.5 h-3.5 text-black" />
+                    <span>In ấn 4K</span>
+                  </button>
+                  <button
+                    onClick={() => downloadPNGWithResolution(inspectedId, "8K")}
+                    className="bg-amber-600 hover:bg-amber-700 text-white py-2.5 px-2 rounded-xl text-[10px] font-bold tracking-wide flex flex-col items-center justify-center space-y-1 transition-all shadow-md active:scale-95 font-sans border border-amber-500"
+                    title="Tải ảnh PNG độ phân giải 8K cực lớn để in phông nền đám cưới"
+                  >
+                    <Download className="w-3.5 h-3.5 text-white" />
+                    <span>In Phông 8K</span>
+                  </button>
+                </div>
               </div>
 
               {/* Quick AI Advice Helper */}
@@ -1107,6 +1309,34 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Hidden high-quality SVG element dedicated for pristine PNG/SVG exports */}
+      <div 
+        id="hidden-export-container" 
+        style={{ 
+          position: "absolute", 
+          left: "-9999px", 
+          top: "-9999px", 
+          width: "400px", 
+          height: "400px", 
+          overflow: "hidden" 
+        }}
+      >
+        {inspectedId !== null && (
+          <LogoRenderer
+            id={inspectedId}
+            domId={`wedding-logo-export-${inspectedId}`}
+            initials={initials}
+            partner1={partner1}
+            partner2={partner2}
+            date={weddingDate}
+            themeColor={strokeColor}
+            bgColor={backgroundColor}
+            width={400}
+            height={400}
+          />
+        )}
+      </div>
 
     </div>
   );
